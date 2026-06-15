@@ -1,305 +1,372 @@
 """
-Roig Fleet Manager — DEMO MODE
-Streamlit · Roig Rent a Car
-Datos de ejemplo pregrabados · Sin API · Sin PDFs
+Roig Fleet Manager — DEMO INTERACTIVO
+Pantalla 1: Asignación interactiva reserva por reserva
+Pantalla 2: Dashboard de disponibilidad por categoría
 """
 
 import streamlit as st
 import pandas as pd
-import csv
-import io
 from datetime import datetime, timedelta
+import io, csv
 
 # ─────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────
 st.set_page_config(
-    page_title="Roig Fleet Manager · Demo",
+    page_title="Roig Fleet Manager",
     page_icon="🚗",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ─────────────────────────────────────────
-# CUSTOM CSS
+# CSS
 # ─────────────────────────────────────────
 st.markdown("""
 <style>
-#MainMenu, footer { visibility: hidden; }
+#MainMenu, footer, header { visibility: hidden; }
 
+/* ── Header ── */
 .rfm-header {
     background: linear-gradient(135deg, #0A4A39 0%, #0F6E56 100%);
     color: white;
-    padding: 18px 24px;
+    padding: 16px 24px;
     border-radius: 12px;
-    margin-bottom: 22px;
+    margin-bottom: 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    box-shadow: 0 4px 12px rgba(15,110,86,0.3);
+    box-shadow: 0 4px 16px rgba(15,110,86,0.25);
 }
-.rfm-header h1 { font-size: 1.25rem; margin: 0; font-weight: 800; letter-spacing: -.01em; }
-.rfm-header .sub { font-size: .78rem; opacity: .75; margin-top: 2px; }
-.rfm-header .clock { font-size: 1.4rem; font-weight: 800; font-family: monospace; }
-.rfm-header .date  { font-size: .72rem; opacity: .7; text-align: right; margin-top: 2px; }
+.rfm-header h1  { font-size: 1.2rem; margin: 0; font-weight: 800; }
+.rfm-header .sub { font-size: .75rem; opacity: .7; margin-top: 2px; }
+.rfm-header .clock { font-size: 1.3rem; font-weight: 800; font-family: monospace; }
+.rfm-header .date  { font-size: .7rem; opacity: .65; text-align:right; margin-top:2px; }
 
-.demo-banner {
-    background: #FEF3C7;
-    border: 1.5px solid #FCD34D;
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: .82rem;
-    color: #92400E;
-    margin-bottom: 18px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+/* ── Demo banner ── */
+.demo-pill {
+    display: inline-block;
+    background: #FEF3C7; color: #92400E;
+    border: 1px solid #FCD34D;
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: .72rem; font-weight: 700;
+    margin-bottom: 16px;
 }
 
-.metric-box {
+/* ── Reservation cards ── */
+.res-card {
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    border: 2px solid;
+    transition: all .2s;
+    position: relative;
+}
+.res-card.green {
+    background: #F0FDF4;
+    border-color: #16A34A;
+}
+.res-card.red {
+    background: #FFF5F5;
+    border-color: #DC2626;
+}
+.res-card.yellow {
+    background: #FFFBEB;
+    border-color: #D97706;
+}
+.res-time {
+    font-family: monospace; font-weight: 800;
+    font-size: 1.1rem; color: #0F6E56;
+}
+.res-model { font-weight: 700; font-size: .95rem; color: #111827; }
+.res-client { font-size: .78rem; color: #6B7280; margin-top: 2px; }
+.res-assign {
+    font-size: .75rem; font-weight: 700;
+    padding: 3px 10px; border-radius: 20px;
+    display: inline-block; margin-top: 6px;
+}
+.assign-ok    { background: #DCFCE7; color: #166534; }
+.assign-ret   { background: #DBEAFE; color: #1D4ED8; }
+.assign-none  { background: #FEE2E2; color: #991B1B; }
+.assign-warn  { background: #FEF3C7; color: #92400E; }
+
+/* ── Status badge ── */
+.status-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    display: inline-block; margin-right: 6px;
+    vertical-align: middle;
+}
+.dot-green  { background: #16A34A; box-shadow: 0 0 0 3px #DCFCE7; }
+.dot-red    { background: #DC2626; box-shadow: 0 0 0 3px #FEE2E2; }
+.dot-yellow { background: #D97706; box-shadow: 0 0 0 3px #FEF3C7; }
+
+/* ── Summary header ── */
+.summary-bar {
     background: white;
     border: 1px solid #E5E7EB;
-    border-radius: 12px;
-    padding: 18px 16px;
-    text-align: center;
-    border-top: 4px solid #0F6E56;
+    border-radius: 10px;
+    padding: 12px 18px;
+    margin-bottom: 18px;
+    display: flex; gap: 24px; align-items: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    flex-wrap: wrap;
+}
+.sum-item { text-align: center; }
+.sum-val  { font-size: 1.5rem; font-weight: 800; }
+.sum-lbl  { font-size: .65rem; text-transform: uppercase; letter-spacing: .06em; color: #6B7280; font-weight: 700; }
+.sum-ok   { color: #16A34A; }
+.sum-warn { color: #D97706; }
+.sum-err  { color: #DC2626; }
+
+/* ── Dashboard metrics ── */
+.metric-box {
+    background: white; border: 1px solid #E5E7EB;
+    border-radius: 12px; padding: 18px 16px;
+    text-align: center; border-top: 4px solid #0F6E56;
     box-shadow: 0 1px 4px rgba(0,0,0,.07);
 }
-.metric-box.warn    { border-top-color: #B45309; }
-.metric-box.crit    { border-top-color: #B91C1C; }
+.metric-box.warn { border-top-color: #D97706; }
+.metric-box.crit { border-top-color: #DC2626; }
 .metric-box.neutral { border-top-color: #9CA3AF; }
-.metric-val { font-size: 2.4rem; font-weight: 900; color: #111827; line-height: 1; }
+.metric-val { font-size: 2.2rem; font-weight: 900; color: #111827; line-height:1; }
 .metric-val.ok   { color: #0F6E56; }
-.metric-val.warn { color: #B45309; }
-.metric-val.crit { color: #B91C1C; }
-.metric-lbl { font-size: .7rem; font-weight: 700; text-transform: uppercase;
+.metric-val.warn { color: #D97706; }
+.metric-val.crit { color: #DC2626; }
+.metric-lbl { font-size: .68rem; font-weight: 700; text-transform: uppercase;
               letter-spacing: .07em; color: #6B7280; margin-bottom: 8px; }
-.metric-sub { font-size: .72rem; color: #9CA3AF; margin-top: 5px; }
+.metric-sub { font-size: .7rem; color: #9CA3AF; margin-top: 4px; }
 
-.alert-crit {
-    background: #FFF5F5; border-left: 4px solid #B91C1C;
-    border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;
-    font-size: .83rem;
+/* ── Category table ── */
+.cat-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+.cat-table th {
+    background: #F9FAFB; padding: 9px 12px;
+    text-align: left; font-size: .68rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em; color: #6B7280;
+    border-bottom: 2px solid #E5E7EB;
 }
-.alert-warn {
-    background: #FFFBEB; border-left: 4px solid #B45309;
-    border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;
-    font-size: .83rem;
-}
-.alert-title { font-weight: 700; margin-bottom: 5px; font-size: .85rem; }
-.alert-crit .alert-title { color: #B91C1C; }
-.alert-warn .alert-title { color: #B45309; }
-.alert-item { padding: 2px 0; color: #374151; }
-.alert-item::before { content: '· '; color: #9CA3AF; }
+.cat-table td { padding: 10px 12px; border-bottom: 1px solid #F3F4F6; vertical-align: middle; }
+.cat-table tr:hover td { background: #F9FAFB; }
+.avail-big { font-size: 1.2rem; font-weight: 800; }
+.avail-ok   { color: #0F6E56; }
+.avail-warn { color: #D97706; }
+.avail-crit { color: #DC2626; }
 
-.sec-lbl {
-    font-size: .69rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .08em; color: #6B7280; margin-bottom: 10px;
-    padding-bottom: 6px; border-bottom: 1px solid #E5E7EB;
+/* ── Tabs custom ── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 4px;
+    background: #F3F4F6;
+    padding: 4px;
+    border-radius: 10px;
+    margin-bottom: 18px;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 7px !important;
+    font-weight: 600 !important;
+    font-size: .85rem !important;
+}
+.stTabs [aria-selected="true"] {
+    background: white !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,.1) !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
-# DEMO DATA — realistic Mallorca fleet
-# ─────────────────────────────────────────
-DEMO_GARAJE = [
-    {"modelo": "Seat Ibiza",       "grupo": "Económico",  "matricula": "4523 MLL"},
-    {"modelo": "Seat Ibiza",       "grupo": "Económico",  "matricula": "7821 PKR"},
-    {"modelo": "Opel Corsa",       "grupo": "Económico",  "matricula": "3190 HBT"},
-    {"modelo": "VW Polo",          "grupo": "Económico",  "matricula": "9902 DFS"},
-    {"modelo": "Seat León",        "grupo": "Compacto",   "matricula": "6614 NMW"},
-    {"modelo": "Seat León",        "grupo": "Compacto",   "matricula": "1147 QVX"},
-    {"modelo": "Ford Focus",       "grupo": "Compacto",   "matricula": "8830 JTL"},
-    {"modelo": "Toyota Corolla",   "grupo": "Compacto",   "matricula": "2255 RPK"},
-    {"modelo": "Dacia Duster",     "grupo": "SUV",        "matricula": "5571 CBN"},
-    {"modelo": "Hyundai Tucson",   "grupo": "SUV",        "matricula": "3348 LVZ"},
-    {"modelo": "VW Tiguan",        "grupo": "SUV",        "matricula": "7709 MXQ"},
-    {"modelo": "Seat Tarraco",     "grupo": "SUV",        "matricula": "1123 WKF"},
-    {"modelo": "Mercedes Clase A", "grupo": "Premium",    "matricula": "6680 GTY"},
-    {"modelo": "BMW Serie 1",      "grupo": "Premium",    "matricula": "4412 BRD"},
-    {"modelo": "Ford Galaxy",      "grupo": "Familiar",   "matricula": "9934 CPM"},
-    {"modelo": "Seat Alhambra",    "grupo": "Minivan",    "matricula": "2267 NHJ"},
-]
-
-DEMO_RETORNOS = [
-    {"hora": "07:30", "modelo": "Seat Ibiza",       "matricula": "1198 ZZT", "zona": "AEROP"},
-    {"hora": "08:00", "modelo": "VW Polo",           "matricula": "4456 KLM", "zona": "SHUTT"},
-    {"hora": "08:45", "modelo": "Seat León",         "matricula": "7723 OPQ", "zona": "AEROP"},
-    {"hora": "09:15", "modelo": "Dacia Duster",      "matricula": "3381 RST", "zona": "OFICINA"},
-    {"hora": "10:00", "modelo": "Toyota Corolla",    "matricula": "6690 UVW", "zona": "SHUTT"},
-    {"hora": "10:30", "modelo": "Hyundai Tucson",    "matricula": "8812 XYZ", "zona": "AEROP"},
-    {"hora": "11:00", "modelo": "Ford Focus",        "matricula": "2234 ABC", "zona": "OFICINA"},
-    {"hora": "12:00", "modelo": "Opel Corsa",        "matricula": "5567 DEF", "zona": "AEROP"},
-    {"hora": "13:30", "modelo": "VW Tiguan",         "matricula": "9901 GHI", "zona": "SHUTT"},
-    {"hora": "14:00", "modelo": "Seat Ibiza",        "matricula": "1145 JKL", "zona": "AEROP"},
-    {"hora": "15:30", "modelo": "BMW Serie 1",       "matricula": "4478 MNO", "zona": "OFICINA"},
-    {"hora": "16:00", "modelo": "Seat Tarraco",      "matricula": "7712 PQR", "zona": "AEROP"},
-    {"hora": "17:00", "modelo": "Ford Galaxy",       "matricula": "3345 STU", "zona": "SHUTT"},
-    {"hora": "18:30", "modelo": "Mercedes Clase A",  "matricula": "6678 VWX", "zona": "AEROP"},
-    {"hora": "19:00", "modelo": "Seat León",         "matricula": "9923 YZA", "zona": "OFICINA"},
-]
-
-DEMO_RESERVAS = [
-    {"hora": "07:00", "modelo": "Seat Ibiza",       "cliente": "García López, M.",    "matricula": ""},
-    {"hora": "07:30", "modelo": "VW Polo",           "cliente": "Müller, H.",          "matricula": ""},
-    {"hora": "08:00", "modelo": "Dacia Duster",      "cliente": "Smith, J.",           "matricula": "5571 CBN"},
-    {"hora": "08:30", "modelo": "Seat León",         "cliente": "Martínez Ruiz, A.",   "matricula": ""},
-    {"hora": "09:00", "modelo": "Hyundai Tucson",    "cliente": "Rossi, G.",           "matricula": "3348 LVZ"},
-    {"hora": "09:30", "modelo": "Ford Focus",        "cliente": "Dupont, C.",          "matricula": ""},
-    {"hora": "10:00", "modelo": "Toyota Corolla",    "cliente": "Fernández, R.",       "matricula": "2255 RPK"},
-    {"hora": "10:30", "modelo": "Opel Corsa",        "cliente": "Williams, T.",        "matricula": ""},
-    {"hora": "11:00", "modelo": "VW Tiguan",         "cliente": "Sánchez Mora, P.",    "matricula": "7709 MXQ"},
-    {"hora": "12:00", "modelo": "Seat Ibiza",        "cliente": "Johnson, K.",         "matricula": ""},
-    {"hora": "13:00", "modelo": "BMW Serie 1",       "cliente": "Nakamura, Y.",        "matricula": "4412 BRD"},
-    {"hora": "14:00", "modelo": "Seat León",         "cliente": "Pérez Vidal, L.",     "matricula": ""},
-    {"hora": "15:00", "modelo": "Mercedes Clase A",  "cliente": "Brown, A.",           "matricula": "6680 GTY"},
-    {"hora": "16:00", "modelo": "Seat Tarraco",      "cliente": "González, C.",        "matricula": ""},
-    {"hora": "17:00", "modelo": "Ford Galaxy",       "cliente": "Hoffmann, E.",        "matricula": "9934 CPM"},
-    {"hora": "18:00", "modelo": "Seat Alhambra",     "cliente": "López Torres, S.",    "matricula": "2267 NHJ"},
-    {"hora": "19:00", "modelo": "Dacia Duster",      "cliente": "Davies, R.",          "matricula": ""},
-    {"hora": "20:00", "modelo": "VW Polo",           "cliente": "Moreau, F.",          "matricula": ""},
-]
-
-# ─────────────────────────────────────────
-# CORE LOGIC
+# DEMO DATA
 # ─────────────────────────────────────────
 ZONA_OFFSET = {"AEROP": 60, "SHUTT": 45}
 
-def parse_time(s: str) -> datetime:
-    t = datetime.strptime(s, "%H:%M")
-    return datetime.now().replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+DEMO_GARAJE = [
+    {"modelo": "Seat Ibiza",        "grupo": "Económico",  "matricula": "4523 MLL"},
+    {"modelo": "Seat Ibiza",        "grupo": "Económico",  "matricula": "7821 PKR"},
+    {"modelo": "Opel Corsa",        "grupo": "Económico",  "matricula": "3190 HBT"},
+    {"modelo": "VW Polo",           "grupo": "Económico",  "matricula": "9902 DFS"},
+    {"modelo": "Seat León",         "grupo": "Compacto",   "matricula": "6614 NMW"},
+    {"modelo": "Seat León",         "grupo": "Compacto",   "matricula": "1147 QVX"},
+    {"modelo": "Ford Focus",        "grupo": "Compacto",   "matricula": "8830 JTL"},
+    {"modelo": "Toyota Corolla",    "grupo": "Compacto",   "matricula": "2255 RPK"},
+    {"modelo": "Dacia Duster",      "grupo": "SUV",        "matricula": "5571 CBN"},
+    {"modelo": "Hyundai Tucson",    "grupo": "SUV",        "matricula": "3348 LVZ"},
+    {"modelo": "VW Tiguan",         "grupo": "SUV",        "matricula": "7709 MXQ"},
+    {"modelo": "Seat Tarraco",      "grupo": "SUV",        "matricula": "1123 WKF"},
+    {"modelo": "Mercedes Clase A",  "grupo": "Premium",    "matricula": "6680 GTY"},
+    {"modelo": "BMW Serie 1",       "grupo": "Premium",    "matricula": "4412 BRD"},
+    {"modelo": "Ford Galaxy",       "grupo": "Familiar",   "matricula": "9934 CPM"},
+    {"modelo": "Seat Alhambra",     "grupo": "Minivan",    "matricula": "2267 NHJ"},
+]
 
-def available_time(hora: str, zona: str) -> datetime:
-    offset = ZONA_OFFSET.get(zona.upper(), 0)
-    return parse_time(hora) + timedelta(minutes=offset)
+DEMO_RETORNOS = [
+    {"hora": "07:30", "modelo": "Seat Ibiza",        "matricula": "1198 ZZT", "zona": "AEROP"},
+    {"hora": "08:00", "modelo": "VW Polo",            "matricula": "4456 KLM", "zona": "SHUTT"},
+    {"hora": "08:45", "modelo": "Seat León",          "matricula": "7723 OPQ", "zona": "AEROP"},
+    {"hora": "09:15", "modelo": "Dacia Duster",       "matricula": "3381 RST", "zona": "OFICINA"},
+    {"hora": "10:00", "modelo": "Toyota Corolla",     "matricula": "6690 UVW", "zona": "SHUTT"},
+    {"hora": "10:30", "modelo": "Hyundai Tucson",     "matricula": "8812 XYZ", "zona": "AEROP"},
+    {"hora": "11:00", "modelo": "Ford Focus",         "matricula": "2234 ABC", "zona": "OFICINA"},
+    {"hora": "12:00", "modelo": "Opel Corsa",         "matricula": "5567 DEF", "zona": "AEROP"},
+    {"hora": "13:30", "modelo": "VW Tiguan",          "matricula": "9901 GHI", "zona": "SHUTT"},
+    {"hora": "14:00", "modelo": "Seat Ibiza",         "matricula": "1145 JKL", "zona": "AEROP"},
+    {"hora": "15:30", "modelo": "BMW Serie 1",        "matricula": "4478 MNO", "zona": "OFICINA"},
+    {"hora": "16:00", "modelo": "Seat Tarraco",       "matricula": "7712 PQR", "zona": "AEROP"},
+    {"hora": "17:00", "modelo": "Ford Galaxy",        "matricula": "3345 STU", "zona": "SHUTT"},
+    {"hora": "18:30", "modelo": "Mercedes Clase A",   "matricula": "6678 VWX", "zona": "AEROP"},
+    {"hora": "19:00", "modelo": "Seat León",          "matricula": "9923 YZA", "zona": "OFICINA"},
+]
 
-def calc_stock(now: datetime, threshold: int) -> dict:
-    # ── Build per-model garaje inventory ──
-    garaje_map = {}
-    plates_map = {}
-    for c in DEMO_GARAJE:
-        m = c["modelo"]
-        garaje_map[m] = garaje_map.get(m, 0) + 1
-        plates_map.setdefault(m, []).append(c["matricula"])
-
-    all_models = sorted(set(
-        list(garaje_map.keys()) +
-        [r["modelo"] for r in DEMO_RETORNOS] +
-        [s["modelo"] for s in DEMO_RESERVAS]
-    ))
-
-    # ── Process retornos ──
-    retornos_proc = []
-    for r in DEMO_RETORNOS:
-        av = available_time(r["hora"], r["zona"])
-        disponible = av <= now
-        retornos_proc.append({**r, "hora_disponible": av.strftime("%H:%M"), "disponible_ahora": disponible})
-
-    # ── Process salidas ──
-    salidas_proc = []
-    for s in DEMO_RESERVAS:
-        realizada = parse_time(s["hora"]) <= now
-        salidas_proc.append({**s, "realizada": realizada})
-
-    # ── Per-model aggregation ──
-    modelos_result = []
-    for modelo in all_models:
-        garaje      = garaje_map.get(modelo, 0)
-        grupo       = next((c["grupo"] for c in DEMO_GARAJE if c["modelo"] == modelo), "—")
-        plates      = plates_map.get(modelo, [])
-
-        ret_total   = [r for r in retornos_proc if r["modelo"] == modelo]
-        ret_disp    = [r for r in ret_total if r["disponible_ahora"]]
-
-        sal_hechas  = [s for s in salidas_proc if s["modelo"] == modelo and s["realizada"]]
-        sal_pend    = [s for s in salidas_proc if s["modelo"] == modelo and not s["realizada"]]
-
-        stock_ahora = garaje + len(ret_disp) - len(sal_hechas)
-        stock_eod   = garaje + len(ret_total) - len(sal_hechas) - len(sal_pend)
-
-        modelos_result.append({
-            "grupo":                     grupo,
-            "modelo":                    modelo,
-            "matriculas_garaje":         plates,
-            "garaje":                    garaje,
-            "retornos_disponibles_ahora": len(ret_disp),
-            "retornos_total_hoy":        len(ret_total),
-            "salidas_hechas":            len(sal_hechas),
-            "reservas_pendientes":       len(sal_pend),
-            "stock_ahora":               stock_ahora,
-            "stock_fin_dia":             stock_eod,
-        })
-
-    # ── Global summary ──
-    resumen = {
-        "total_garaje":                    len(DEMO_GARAJE),
-        "total_retornos_disponibles_ahora": sum(1 for r in retornos_proc if r["disponible_ahora"]),
-        "total_retornos_hoy":              len(retornos_proc),
-        "total_salidas_hechas":            sum(1 for s in salidas_proc if s["realizada"]),
-        "total_reservas_pendientes":       sum(1 for s in salidas_proc if not s["realizada"]),
-        "stock_disponible_ahora":          len(DEMO_GARAJE) + sum(1 for r in retornos_proc if r["disponible_ahora"]) - sum(1 for s in salidas_proc if s["realizada"]),
-        "stock_fin_dia":                   len(DEMO_GARAJE) + len(retornos_proc) - len(salidas_proc),
-    }
-
-    return {
-        "resumen":  resumen,
-        "modelos":  modelos_result,
-        "retornos": retornos_proc,
-        "salidas":  salidas_proc,
-    }
-
-def export_csv(result: dict, threshold: int) -> str:
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Grupo","Modelo","Matrículas garaje","Garaje",
-                     "Ret. disp. ahora","Ret. total hoy","Salidas hechas",
-                     "Reservas pendientes","Stock ahora","Stock fin día","Estado"])
-    for m in result["modelos"]:
-        stock  = m["stock_ahora"]
-        estado = "SIN STOCK" if stock <= 0 else ("BAJO" if stock <= threshold else "OK")
-        writer.writerow([
-            m["grupo"], m["modelo"], " · ".join(m["matriculas_garaje"]),
-            m["garaje"], m["retornos_disponibles_ahora"], m["retornos_total_hoy"],
-            m["salidas_hechas"], m["reservas_pendientes"],
-            m["stock_ahora"], m["stock_fin_dia"], estado,
-        ])
-    return output.getvalue()
-
-def export_txt(result: dict, now: datetime, threshold: int) -> str:
-    r  = result["resumen"]
-    t  = "ROIG FLEET MANAGER — RESUMEN DE STOCK\n"
-    t += "=" * 50 + "\n"
-    t += f"Empresa : Roig Rent a Car\n"
-    t += f"Fecha   : {now.strftime('%A %d de %B de %Y')}\n"
-    t += f"Hora    : {now.strftime('%H:%M:%S')}\n\n"
-    t += "RESUMEN GLOBAL\n" + "-" * 30 + "\n"
-    t += f"Garaje (inventario base)      : {r['total_garaje']}\n"
-    t += f"Retornos disponibles ahora    : {r['total_retornos_disponibles_ahora']}\n"
-    t += f"Retornos totales hoy          : {r['total_retornos_hoy']}\n"
-    t += f"Salidas ya realizadas         : {r['total_salidas_hechas']}\n"
-    t += f"Reservas pendientes           : {r['total_reservas_pendientes']}\n"
-    t += f"STOCK DISPONIBLE AHORA        : {r['stock_disponible_ahora']}\n"
-    t += f"STOCK ESTIMADO FIN DE DÍA     : {r['stock_fin_dia']}\n\n"
-    t += "DETALLE POR MODELO\n" + "-" * 50 + "\n"
-    for m in result["modelos"]:
-        stock  = m["stock_ahora"]
-        estado = "[SIN STOCK]" if stock <= 0 else ("[BAJO]" if stock <= threshold else "[OK]")
-        t += f"\n{m['modelo']} ({m['grupo']}) {estado}\n"
-        if m["matriculas_garaje"]:
-            t += f"  Matrículas: {', '.join(m['matriculas_garaje'])}\n"
-        t += f"  Garaje: {m['garaje']} | Ret. disp: {m['retornos_disponibles_ahora']}/{m['retornos_total_hoy']}"
-        t += f" | Salidas: {m['salidas_hechas']} | Pendientes: {m['reservas_pendientes']}\n"
-        t += f"  Stock ahora: {m['stock_ahora']} | Fin de día: {m['stock_fin_dia']}\n"
-    t += "\n" + "-" * 50 + "\nGenerado por Roig Fleet Manager · MODO DEMO\n"
-    return t
+DEMO_RESERVAS = [
+    {"hora": "07:00", "modelo": "Seat Ibiza",        "cliente": "García López, M.",   "grupo": "Económico"},
+    {"hora": "07:30", "modelo": "VW Polo",            "cliente": "Müller, H.",         "grupo": "Económico"},
+    {"hora": "08:00", "modelo": "Dacia Duster",       "cliente": "Smith, J.",          "grupo": "SUV"},
+    {"hora": "08:30", "modelo": "Seat León",          "cliente": "Martínez Ruiz, A.", "grupo": "Compacto"},
+    {"hora": "09:00", "modelo": "Hyundai Tucson",     "cliente": "Rossi, G.",          "grupo": "SUV"},
+    {"hora": "09:30", "modelo": "Ford Focus",         "cliente": "Dupont, C.",         "grupo": "Compacto"},
+    {"hora": "10:00", "modelo": "Toyota Corolla",     "cliente": "Fernández, R.",      "grupo": "Compacto"},
+    {"hora": "10:30", "modelo": "Opel Corsa",         "cliente": "Williams, T.",       "grupo": "Económico"},
+    {"hora": "11:00", "modelo": "VW Tiguan",          "cliente": "Sánchez Mora, P.",  "grupo": "SUV"},
+    {"hora": "12:00", "modelo": "Seat Ibiza",         "cliente": "Johnson, K.",        "grupo": "Económico"},
+    {"hora": "13:00", "modelo": "BMW Serie 1",        "cliente": "Nakamura, Y.",       "grupo": "Premium"},
+    {"hora": "14:00", "modelo": "Seat León",          "cliente": "Pérez Vidal, L.",   "grupo": "Compacto"},
+    {"hora": "15:00", "modelo": "Mercedes Clase A",   "cliente": "Brown, A.",          "grupo": "Premium"},
+    {"hora": "16:00", "modelo": "Seat Tarraco",       "cliente": "González, C.",       "grupo": "SUV"},
+    {"hora": "17:00", "modelo": "Ford Galaxy",        "cliente": "Hoffmann, E.",       "grupo": "Familiar"},
+    {"hora": "18:00", "modelo": "Seat Alhambra",      "cliente": "López Torres, S.",  "grupo": "Minivan"},
+    {"hora": "19:00", "modelo": "Dacia Duster",       "cliente": "Davies, R.",         "grupo": "SUV"},
+    {"hora": "20:00", "modelo": "VW Polo",            "cliente": "Moreau, F.",         "grupo": "Económico"},
+]
 
 # ─────────────────────────────────────────
-# RENDER
+# HELPERS
+# ─────────────────────────────────────────
+def to_dt(hora: str) -> datetime:
+    t = datetime.strptime(hora, "%H:%M")
+    return datetime.now().replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+
+def avail_dt(hora: str, zona: str) -> datetime:
+    offset = ZONA_OFFSET.get(zona.upper().strip(), 0)
+    return to_dt(hora) + timedelta(minutes=offset)
+
+def avail_str(hora: str, zona: str) -> str:
+    return avail_dt(hora, zona).strftime("%H:%M")
+
+# ─────────────────────────────────────────
+# AUTO-ASSIGN ENGINE
+# ─────────────────────────────────────────
+def auto_assign(reservas, garaje, retornos, sim_now):
+    """
+    For each reservation, find the best available car:
+    1. Garaje units of same model (immediate)
+    2. Garaje units of same group (upgrade/downgrade note)
+    3. Returns of same model arriving in time
+    4. Returns of same group arriving in time
+    Priority: exact model > group. Within returns: earliest arriving first.
+    Returns list of assignment dicts.
+    """
+    # Build mutable pools
+    garaje_pool = [dict(c, used=False) for c in garaje]
+
+    ret_pool = []
+    for r in retornos:
+        av = avail_dt(r["hora"], r["zona"])
+        ret_pool.append(dict(r,
+            avail_dt=av,
+            avail_str=avail_str(r["hora"], r["zona"]),
+            used=False,
+            grupo=next((c["grupo"] for c in garaje if c["modelo"] == r["modelo"]), "—")
+        ))
+
+    assignments = []
+
+    for res in reservas:
+        res_dt   = to_dt(res["hora"])
+        modelo   = res["modelo"]
+        grupo    = res["grupo"]
+        assigned = None
+        source   = None
+        note     = ""
+        alt_suggestions = []
+
+        # 1. Garaje — exact model
+        for c in garaje_pool:
+            if not c["used"] and c["modelo"] == modelo:
+                c["used"] = True
+                assigned  = c["matricula"]
+                source    = "garaje"
+                break
+
+        # 2. Return — exact model arriving before reservation
+        if not assigned:
+            candidates = [r for r in ret_pool if not r["used"] and r["modelo"] == modelo and r["avail_dt"] <= res_dt]
+            candidates.sort(key=lambda x: x["avail_dt"])
+            if candidates:
+                r2 = candidates[0]
+                r2["used"]  = True
+                assigned    = r2["matricula"]
+                source      = "retorno"
+                note        = f"Retorno {r2['hora']} zona {r2['zona']} · disponible a las {r2['avail_str']}"
+
+        # 3. Garaje — same group (different model)
+        if not assigned:
+            for c in garaje_pool:
+                if not c["used"] and c["grupo"] == grupo:
+                    c["used"] = True
+                    assigned  = c["matricula"]
+                    source    = "garaje_alt"
+                    note      = f"Alternativa de grupo {grupo}: {c['modelo']}"
+                    break
+
+        # 4. Return — same group arriving in time
+        if not assigned:
+            candidates = [r for r in ret_pool if not r["used"] and r["grupo"] == grupo and r["avail_dt"] <= res_dt]
+            candidates.sort(key=lambda x: x["avail_dt"])
+            if candidates:
+                r2 = candidates[0]
+                r2["used"]  = True
+                assigned    = r2["matricula"]
+                source      = "retorno_alt"
+                note        = f"Alternativa de grupo {grupo}: {r2['modelo']} · retorno {r2['hora']} disponible {r2['avail_str']}"
+
+        # No car found — build suggestions
+        if not assigned:
+            # Suggest any available garaje car
+            for c in garaje_pool:
+                if not c["used"]:
+                    alt_suggestions.append(f"{c['modelo']} ({c['matricula']}) — garaje")
+                    if len(alt_suggestions) >= 3: break
+            # Suggest any return arriving today
+            if len(alt_suggestions) < 3:
+                for r2 in ret_pool:
+                    if not r2["used"]:
+                        alt_suggestions.append(f"{r2['modelo']} ({r2['matricula']}) — retorno {r2['hora']} disp. {r2['avail_str']}")
+                        if len(alt_suggestions) >= 3: break
+
+        assignments.append({
+            "hora":        res["hora"],
+            "modelo":      modelo,
+            "grupo":       grupo,
+            "cliente":     res["cliente"],
+            "assigned":    assigned,
+            "source":      source,
+            "note":        note,
+            "suggestions": alt_suggestions,
+        })
+
+    return assignments, garaje_pool, ret_pool
+
+# ─────────────────────────────────────────
+# SESSION STATE
 # ─────────────────────────────────────────
 now = datetime.now()
 
-# Header
+if "sim_hour"    not in st.session_state: st.session_state.sim_hour = now.hour
+if "sim_min"     not in st.session_state: st.session_state.sim_min  = now.minute
+if "use_sim"     not in st.session_state: st.session_state.use_sim  = False
+if "threshold"   not in st.session_state: st.session_state.threshold = 2
+if "overrides"   not in st.session_state: st.session_state.overrides = {}   # idx -> matricula override
+
+# ─────────────────────────────────────────
+# HEADER
+# ─────────────────────────────────────────
 st.markdown(f"""
 <div class="rfm-header">
   <div>
@@ -311,188 +378,360 @@ st.markdown(f"""
     <div class="date">{now.strftime('%A %d %B %Y').capitalize()}</div>
   </div>
 </div>
+<div class="demo-pill">🎯 MODO DEMO — datos de ejemplo · En producción se cargan desde PDFs con IA</div>
 """, unsafe_allow_html=True)
 
-# Demo banner
-st.markdown("""
-<div class="demo-banner">
-  🎯 <strong>MODO DEMO</strong> — Datos de ejemplo de una flota real en Mallorca.
-  En producción, estos datos se extraen automáticamente de los PDFs diarios con IA.
-</div>
-""", unsafe_allow_html=True)
-
-# ── SIDEBAR ──────────────────────────────
+# ─────────────────────────────────────────
+# SIDEBAR — controls
+# ─────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### ⚙️ Configuración demo")
-    threshold = st.number_input("Umbral alerta stock bajo", min_value=0, max_value=20, value=2,
-                                 help="Alerta cuando el stock de un modelo cae a este número o menos")
-    
+    st.markdown("### ⚙️ Controles")
+    st.session_state.threshold = st.number_input("Umbral alerta stock", min_value=0, max_value=10, value=st.session_state.threshold)
     st.divider()
-    st.markdown("### 🕐 Simular hora del día")
-    st.caption("Mueve el slider para ver cómo cambia el stock a lo largo del día.")
-    sim_hour = st.slider("Hora simulada", 0, 23, now.hour, format="%d:00h")
-    sim_min  = st.slider("Minuto", 0, 59, now.minute)
-    use_sim  = st.checkbox("Usar hora simulada", value=False)
-
-    if use_sim:
-        sim_now = now.replace(hour=sim_hour, minute=sim_min, second=0)
-        st.info(f"⏱ Simulando: **{sim_now.strftime('%H:%M')}**")
-    else:
-        sim_now = now
-
+    st.markdown("### ⏱ Simular hora")
+    st.caption("Mueve el slider para ver cómo cambian las asignaciones a lo largo del día.")
+    st.session_state.sim_hour = st.slider("Hora", 0, 23, st.session_state.sim_hour)
+    st.session_state.sim_min  = st.slider("Minuto", 0, 59, st.session_state.sim_min)
+    st.session_state.use_sim  = st.checkbox("Activar hora simulada", value=st.session_state.use_sim)
+    if st.session_state.use_sim:
+        st.info(f"⏱ Simulando **{st.session_state.sim_hour:02d}:{st.session_state.sim_min:02d}**")
+    if st.button("🔄 Resetear asignaciones manuales", use_container_width=True):
+        st.session_state.overrides = {}
+        st.rerun()
     st.divider()
     st.markdown("### ℹ️ Flota demo")
     st.caption(f"**{len(DEMO_GARAJE)}** coches en garaje")
     st.caption(f"**{len(DEMO_RETORNOS)}** retornos programados")
-    st.caption(f"**{len(DEMO_RESERVAS)}** reservas del día")
-    st.caption("Zonas: AEROP (+60 min) · SHUTT (+45 min) · OFICINA (inmediato)")
+    st.caption(f"**{len(DEMO_RESERVAS)}** reservas hoy")
 
-# ── CALCULATE ─────────────────────────────
-result = calc_stock(sim_now, threshold)
-r      = result["resumen"]
-modelos = result["modelos"]
+# ─────────────────────────────────────────
+# COMPUTE
+# ─────────────────────────────────────────
+sim_now = now.replace(
+    hour=st.session_state.sim_hour,
+    minute=st.session_state.sim_min, second=0
+) if st.session_state.use_sim else now
 
-calc_label = sim_now.strftime("Calculado a las %H:%M:%S") + (" (simulado)" if use_sim else " (tiempo real)")
-st.caption(f"🟢 {calc_label}")
+base_assignments, garaje_pool, ret_pool = auto_assign(
+    DEMO_RESERVAS, DEMO_GARAJE, DEMO_RETORNOS, sim_now
+)
 
-# ── METRICS ───────────────────────────────
-alert_count = len([m for m in modelos if m["stock_ahora"] <= 0])
-warn_count  = len([m for m in modelos if 0 < m["stock_ahora"] <= threshold])
+# Apply manual overrides
+# Build full car list for selector
+all_cars = []
+for c in DEMO_GARAJE:
+    all_cars.append({"label": f"{c['matricula']} — {c['modelo']} (garaje)", "matricula": c["matricula"], "modelo": c["modelo"], "grupo": c["grupo"], "source": "garaje"})
+for r in DEMO_RETORNOS:
+    av = avail_str(r["hora"], r["zona"])
+    grupo = next((c["grupo"] for c in DEMO_GARAJE if c["modelo"] == r["modelo"]), "—")
+    all_cars.append({"label": f"{r['matricula']} — {r['modelo']} (retorno {r['hora']} → disp. {av})", "matricula": r["matricula"], "modelo": r["modelo"], "grupo": grupo, "source": f"retorno {r['hora']}", "avail": av})
 
-c1, c2, c3, c4 = st.columns(4)
-with c1:
-    st.markdown(f"""<div class="metric-box neutral">
-        <div class="metric-lbl">En garaje</div>
-        <div class="metric-val">{r['total_garaje']}</div>
-        <div class="metric-sub">unidades base</div>
-    </div>""", unsafe_allow_html=True)
-with c2:
-    st.markdown(f"""<div class="metric-box">
-        <div class="metric-lbl">Retornos disponibles</div>
-        <div class="metric-val ok">{r['total_retornos_disponibles_ahora']}</div>
-        <div class="metric-sub">de {r['total_retornos_hoy']} retornos hoy</div>
-    </div>""", unsafe_allow_html=True)
-with c3:
-    st.markdown(f"""<div class="metric-box warn">
-        <div class="metric-lbl">Reservas pendientes</div>
-        <div class="metric-val warn">{r['total_reservas_pendientes']}</div>
-        <div class="metric-sub">salidas por realizar</div>
-    </div>""", unsafe_allow_html=True)
-with c4:
-    total_al  = alert_count + warn_count
-    val_cls   = "crit" if alert_count > 0 else ("warn" if warn_count > 0 else "ok")
-    card_cls  = "crit" if alert_count > 0 else ("warn" if warn_count > 0 else "")
-    sub_txt   = f"{alert_count} sin stock · {warn_count} stock bajo" if total_al > 0 else "todos los modelos OK"
-    st.markdown(f"""<div class="metric-box {card_cls}">
-        <div class="metric-lbl">Modelos en alerta</div>
-        <div class="metric-val {val_cls}">{total_al}</div>
-        <div class="metric-sub">{sub_txt}</div>
-    </div>""", unsafe_allow_html=True)
+# ─────────────────────────────────────────
+# TABS
+# ─────────────────────────────────────────
+tab1, tab2 = st.tabs(["📋  Asignación de reservas", "📊  Stock disponible para vender"])
 
-st.markdown("<br>", unsafe_allow_html=True)
-
-# ── ALERTS ────────────────────────────────
-sin_stock  = [m for m in modelos if m["stock_ahora"] <= 0]
-stock_bajo = [m for m in modelos if 0 < m["stock_ahora"] <= threshold]
-
-if sin_stock:
-    items = "".join([f'<div class="alert-item">{m["modelo"]} — ahora: <b>{m["stock_ahora"]}</b> · fin día: <b>{m["stock_fin_dia"]}</b></div>' for m in sin_stock])
-    st.markdown(f'<div class="alert-crit"><div class="alert-title">🚨 Sin stock disponible ahora mismo</div>{items}</div>', unsafe_allow_html=True)
-
-if stock_bajo:
-    items = "".join([f'<div class="alert-item">{m["modelo"]} — ahora: <b>{m["stock_ahora"]}</b> · fin día: <b>{m["stock_fin_dia"]}</b></div>' for m in stock_bajo])
-    st.markdown(f'<div class="alert-warn"><div class="alert-title">⚠️ Stock bajo — {len(stock_bajo)} modelo(s) por debajo del umbral (≤ {threshold})</div>{items}</div>', unsafe_allow_html=True)
-
-# ── TABS ──────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📊 Stock por modelo", "🔁 Retornos del día", "🚗 Salidas del día"])
-
+# ══════════════════════════════════════════
+# TAB 1 — RESERVATIONS
+# ══════════════════════════════════════════
 with tab1:
-    st.markdown('<div class="sec-lbl">Inventario en tiempo real</div>', unsafe_allow_html=True)
-    rows = []
-    for m in modelos:
-        stock = m["stock_ahora"]
-        eod   = m["stock_fin_dia"]
-        estado = "🔴 SIN STOCK" if stock <= 0 else ("🟡 BAJO" if stock <= threshold else "🟢 OK")
-        rows.append({
-            "Grupo":         m["grupo"],
-            "Modelo":        m["modelo"],
-            "Matrículas":    " · ".join(m["matriculas_garaje"]) if m["matriculas_garaje"] else "—",
-            "Garaje":        m["garaje"],
-            "Ret. disp.":    m["retornos_disponibles_ahora"],
-            "Ret. total":    m["retornos_total_hoy"],
-            "Salidas":       m["salidas_hechas"],
-            "Res. pend.":    m["reservas_pendientes"],
-            "Stock ahora":   stock,
-            "Fin de día":    eod,
-            "Estado":        estado,
-        })
-    df = pd.DataFrame(rows)
 
-    def color_num(val):
-        if isinstance(val, int):
-            if val <= 0:            return "color:#B91C1C;font-weight:800"
-            if val <= threshold:    return "color:#B45309;font-weight:700"
-            return "color:#0F6E56;font-weight:600"
-        return ""
+    # Re-apply overrides on top of auto assignments
+    assignments = []
+    for i, a in enumerate(base_assignments):
+        if i in st.session_state.overrides:
+            mat = st.session_state.overrides[i]
+            car = next((c for c in all_cars if c["matricula"] == mat), None)
+            if car:
+                src = car["source"]
+                note = f"Asignación manual · {car['modelo']}"
+                if "retorno" in src:
+                    note += f" · disp. {car.get('avail','')}"
+                assignments.append({**a, "assigned": mat, "source": "manual", "note": note})
+            else:
+                assignments.append(a)
+        else:
+            assignments.append(a)
 
-    styled = df.style.applymap(color_num, subset=["Stock ahora", "Fin de día"])
-    st.dataframe(styled, use_container_width=True, hide_index=True, height=420)
+    # Summary counts
+    n_ok   = sum(1 for a in assignments if a["assigned"] and a["source"] not in ["garaje_alt","retorno_alt"])
+    n_alt  = sum(1 for a in assignments if a["assigned"] and a["source"] in ["garaje_alt","retorno_alt"])
+    n_man  = sum(1 for a in assignments if a["source"] == "manual")
+    n_err  = sum(1 for a in assignments if not a["assigned"])
 
+    st.markdown(f"""
+    <div class="summary-bar">
+      <div class="sum-item">
+        <div class="sum-val sum-ok">{n_ok + n_man}</div>
+        <div class="sum-lbl">🟢 Cubiertas</div>
+      </div>
+      <div class="sum-item">
+        <div class="sum-val sum-warn">{n_alt}</div>
+        <div class="sum-lbl">🟡 Alternativa</div>
+      </div>
+      <div class="sum-item">
+        <div class="sum-val sum-err">{n_err}</div>
+        <div class="sum-lbl">🔴 Sin coche</div>
+      </div>
+      <div class="sum-item">
+        <div class="sum-val" style="color:#6B7280">{len(assignments)}</div>
+        <div class="sum-lbl">Total reservas</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── One card per reservation ──────────────
+    for i, a in enumerate(assignments):
+        src    = a["source"] or ""
+        ok     = bool(a["assigned"])
+        is_alt = src in ["garaje_alt", "retorno_alt"]
+        is_man = src == "manual"
+
+        # Card color
+        if not ok:
+            card_cls = "red"
+        elif is_alt:
+            card_cls = "yellow"
+        else:
+            card_cls = "green"
+
+        # Assignment badge
+        if not ok:
+            badge_cls = "assign-none"
+            badge_txt = "❌ Sin coche disponible"
+        elif is_man:
+            badge_cls = "assign-ok"
+            badge_txt = f"✅ {a['assigned']} (manual)"
+        elif src == "garaje":
+            badge_cls = "assign-ok"
+            badge_txt = f"✅ {a['assigned']} — garaje"
+        elif src == "retorno":
+            badge_cls = "assign-ret"
+            badge_txt = f"🔁 {a['assigned']} — retorno"
+        elif is_alt:
+            badge_cls = "assign-warn"
+            badge_txt = f"⚠️ {a['assigned']} — alternativa"
+        else:
+            badge_cls = "assign-ok"
+            badge_txt = f"✅ {a['assigned']}"
+
+        col_card, col_ctrl = st.columns([3, 2])
+
+        with col_card:
+            note_html = f'<div style="font-size:.73rem;color:#6B7280;margin-top:4px">ℹ️ {a["note"]}</div>' if a["note"] else ""
+            st.markdown(f"""
+            <div class="res-card {card_cls}">
+              <span class="status-dot dot-{'green' if card_cls=='green' else 'red' if card_cls=='red' else 'yellow'}"></span>
+              <span class="res-time">{a['hora']}</span>
+              &nbsp;&nbsp;
+              <span class="res-model">{a['modelo']}</span>
+              <span style="font-size:.72rem;background:#F3F4F6;border-radius:4px;padding:2px 7px;margin-left:8px;color:#6B7280">{a['grupo']}</span>
+              <div class="res-client">👤 {a['cliente']}</div>
+              <span class="res-assign {badge_cls}">{badge_txt}</span>
+              {note_html}
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_ctrl:
+            st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+            # Car selector — show all cars, current selection first
+            car_labels = [c["label"] for c in all_cars]
+            # Find current assigned index
+            current_mat = a["assigned"]
+            current_label = next((c["label"] for c in all_cars if c["matricula"] == current_mat), None)
+            default_idx = car_labels.index(current_label) + 1 if current_label in car_labels else 0
+
+            options = ["— Seleccionar coche manualmente —"] + car_labels
+            chosen = st.selectbox(
+                f"Asignar coche #{i+1}",
+                options=options,
+                index=default_idx,
+                key=f"sel_{i}",
+                label_visibility="collapsed",
+            )
+
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("✅ Asignar", key=f"btn_assign_{i}", use_container_width=True):
+                    if chosen != "— Seleccionar coche manualmente —":
+                        mat = next((c["matricula"] for c in all_cars if c["label"] == chosen), None)
+                        if mat:
+                            st.session_state.overrides[i] = mat
+                            st.rerun()
+            with col_btn2:
+                if i in st.session_state.overrides:
+                    if st.button("↩ Auto", key=f"btn_reset_{i}", use_container_width=True):
+                        del st.session_state.overrides[i]
+                        st.rerun()
+
+            # Show suggestions if no car found
+            if not ok and a["suggestions"]:
+                st.markdown("<div style='font-size:.72rem;color:#B45309;margin-top:4px'><b>Sugerencias:</b></div>", unsafe_allow_html=True)
+                for s in a["suggestions"]:
+                    st.markdown(f"<div style='font-size:.7rem;color:#6B7280'>· {s}</div>", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════
+# TAB 2 — DASHBOARD
+# ══════════════════════════════════════════
 with tab2:
-    st.markdown('<div class="sec-lbl">Retornos programados — hora de disponibilidad según zona</div>', unsafe_allow_html=True)
-    rows_r = []
-    for r2 in sorted(result["retornos"], key=lambda x: x["hora_disponible"]):
-        estado = "✅ Disponible" if r2["disponible_ahora"] else "⏳ Pendiente"
-        rows_r.append({
-            "Hora retorno":   r2["hora"],
-            "Disponible a":   r2["hora_disponible"],
-            "Modelo":         r2["modelo"],
-            "Matrícula":      r2["matricula"],
-            "Zona":           r2["zona"],
-            "Estado":         estado,
+
+    # Recalculate stock ignoring assignments (pure inventory view)
+    ret_proc = []
+    for r in DEMO_RETORNOS:
+        av = avail_dt(r["hora"], r["zona"])
+        ret_proc.append({**r,
+            "avail_dt": av,
+            "avail_str": avail_str(r["hora"], r["zona"]),
+            "disponible": av <= sim_now,
+            "grupo": next((c["grupo"] for c in DEMO_GARAJE if c["modelo"] == r["modelo"]), "—"),
         })
-    st.dataframe(pd.DataFrame(rows_r), use_container_width=True, hide_index=True, height=420)
 
-with tab3:
-    st.markdown('<div class="sec-lbl">Reservas del día — salidas programadas</div>', unsafe_allow_html=True)
-    rows_s = []
-    for s in sorted(result["salidas"], key=lambda x: x["hora"]):
-        estado = "✅ Realizada" if s["realizada"] else "⏳ Pendiente"
-        rows_s.append({
-            "Hora":      s["hora"],
-            "Modelo":    s["modelo"],
-            "Matrícula": s.get("matricula", "—") or "—",
-            "Cliente":   s.get("cliente", "—"),
-            "Estado":    estado,
+    res_proc = []
+    for s in DEMO_RESERVAS:
+        res_proc.append({**s, "realizada": to_dt(s["hora"]) <= sim_now})
+
+    # Global metrics
+    total_garaje  = len(DEMO_GARAJE)
+    ret_disp_now  = sum(1 for r in ret_proc if r["disponible"])
+    ret_total     = len(ret_proc)
+    sal_hechas    = sum(1 for s in res_proc if s["realizada"])
+    sal_pend      = sum(1 for s in res_proc if not s["realizada"])
+    stock_now     = total_garaje + ret_disp_now - sal_hechas
+    stock_eod     = total_garaje + ret_total - len(res_proc)
+
+    thr = st.session_state.threshold
+    st.caption(f"🟢 Datos a las {sim_now.strftime('%H:%M')} {'(simulado)' if st.session_state.use_sim else '(tiempo real)'}")
+
+    # Metric cards
+    c1, c2, c3, c4, c5 = st.columns(5)
+    metrics = [
+        ("neutral", "Coches en garaje",          total_garaje,   "inventario base",              ""),
+        ("",        "Retornos disponibles",       ret_disp_now,   f"de {ret_total} retornos hoy", "ok"),
+        ("warn",    "Salidas realizadas",         sal_hechas,     "ya entregados",                "warn"),
+        ("warn",    "Reservas pendientes",        sal_pend,       "por salir hoy",                "warn"),
+        ("" if stock_now > thr else "crit", "Stock disponible ahora", stock_now, f"fin de día: {stock_eod}", "ok" if stock_now > thr else "crit"),
+    ]
+    for col, (card_cls, lbl, val, sub, val_cls) in zip([c1,c2,c3,c4,c5], metrics):
+        with col:
+            st.markdown(f"""<div class="metric-box {card_cls}">
+                <div class="metric-lbl">{lbl}</div>
+                <div class="metric-val {val_cls}">{val}</div>
+                <div class="metric-sub">{sub}</div>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── By category ───────────────────────────
+    st.markdown("#### 📦 Disponibilidad por categoría — lo que puedes vender ahora")
+
+    grupos = sorted(set(c["grupo"] for c in DEMO_GARAJE))
+    cat_rows = []
+    for g in grupos:
+        g_garaje  = [c for c in DEMO_GARAJE if c["grupo"] == g]
+        g_ret_d   = [r for r in ret_proc   if r["grupo"] == g and r["disponible"]]
+        g_ret_t   = [r for r in ret_proc   if r["grupo"] == g]
+        g_sal_h   = [s for s in res_proc   if s["grupo"] == g and s["realizada"]]
+        g_sal_p   = [s for s in res_proc   if s["grupo"] == g and not s["realizada"]]
+
+        g_stock_now = len(g_garaje) + len(g_ret_d) - len(g_sal_h)
+        g_stock_eod = len(g_garaje) + len(g_ret_t) - len(g_sal_h) - len(g_sal_p)
+
+        cat_rows.append({
+            "grupo":       g,
+            "garaje":      len(g_garaje),
+            "ret_disp":    len(g_ret_d),
+            "ret_total":   len(g_ret_t),
+            "sal_hechas":  len(g_sal_h),
+            "sal_pend":    len(g_sal_p),
+            "stock_now":   g_stock_now,
+            "stock_eod":   g_stock_eod,
         })
-    st.dataframe(pd.DataFrame(rows_s), use_container_width=True, hide_index=True, height=460)
 
-st.divider()
+    # Render table
+    header_html = """
+    <table class="cat-table">
+    <thead><tr>
+      <th>Categoría</th>
+      <th>Garaje</th>
+      <th>Ret. disp.</th>
+      <th>Ret. total</th>
+      <th>Salidas hechas</th>
+      <th>Res. pendientes</th>
+      <th>🟢 Disponible ahora</th>
+      <th>📅 Fin de día</th>
+    </tr></thead><tbody>
+    """
+    rows_html = ""
+    for r2 in cat_rows:
+        sn = r2["stock_now"]
+        se = r2["stock_eod"]
+        sn_cls = "avail-ok" if sn > thr else ("avail-warn" if sn > 0 else "avail-crit")
+        se_cls = "avail-ok" if se > thr else ("avail-warn" if se > 0 else "avail-crit")
+        rows_html += f"""<tr>
+          <td><strong>{r2['grupo']}</strong></td>
+          <td>{r2['garaje']}</td>
+          <td>{r2['ret_disp']}</td>
+          <td>{r2['ret_total']}</td>
+          <td>{r2['sal_hechas']}</td>
+          <td>{r2['sal_pend']}</td>
+          <td><span class="avail-big {sn_cls}">{sn}</span></td>
+          <td><span class="avail-big {se_cls}">{se}</span></td>
+        </tr>"""
 
-# ── EXPORT ────────────────────────────────
-st.markdown("**📥 Exportar resultados**")
-e1, e2 = st.columns(2)
-with e1:
-    csv_data = export_csv(result, threshold)
-    st.download_button(
-        "⬇ Descargar CSV",
-        data="\ufeff" + csv_data,
-        file_name=f"roig_fleet_demo_{now.strftime('%Y%m%d_%H%M')}.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
-with e2:
-    txt_data = export_txt(result, sim_now, threshold)
-    st.download_button(
-        "📄 Descargar TXT resumen",
-        data=txt_data,
-        file_name=f"roig_fleet_resumen_demo_{now.strftime('%Y%m%d_%H%M')}.txt",
-        mime="text/plain",
-        use_container_width=True,
-    )
+    st.markdown(header_html + rows_html + "</tbody></table>", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Próximos retornos ─────────────────────
+    st.markdown("#### 🔁 Próximos retornos disponibles")
+    pending_rets = sorted([r for r in ret_proc if not r["disponible"]], key=lambda x: x["avail_dt"])
+    if pending_rets:
+        pr_df = pd.DataFrame([{
+            "Disponible a":  r["avail_str"],
+            "Hora retorno":  r["hora"],
+            "Modelo":        r["modelo"],
+            "Matrícula":     r["matricula"],
+            "Zona":          r["zona"],
+            "Categoría":     r["grupo"],
+        } for r in pending_rets])
+        st.dataframe(pr_df, use_container_width=True, hide_index=True)
+    else:
+        st.success("✅ Todos los retornos del día ya están disponibles.")
+
+    st.divider()
+
+    # ── Export ────────────────────────────────
+    st.markdown("**📥 Exportar**")
+    ex1, ex2 = st.columns(2)
+    with ex1:
+        out = io.StringIO()
+        w   = csv.writer(out)
+        w.writerow(["Categoría","Garaje","Ret.disp.","Ret.total","Salidas","Res.pend.","Stock ahora","Stock fin día"])
+        for r2 in cat_rows:
+            w.writerow([r2["grupo"], r2["garaje"], r2["ret_disp"], r2["ret_total"],
+                        r2["sal_hechas"], r2["sal_pend"], r2["stock_now"], r2["stock_eod"]])
+        st.download_button("⬇ Descargar CSV stock",
+            data="\ufeff" + out.getvalue(),
+            file_name=f"roig_stock_{now.strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv", use_container_width=True)
+    with ex2:
+        out2 = io.StringIO()
+        out2.write(f"ROIG FLEET MANAGER — STOCK POR CATEGORÍA\n{'='*45}\n")
+        out2.write(f"Fecha: {now.strftime('%d/%m/%Y')}  Hora: {sim_now.strftime('%H:%M')}\n\n")
+        for r2 in cat_rows:
+            sn = r2["stock_now"]; se = r2["stock_eod"]
+            estado = "SIN STOCK" if sn <= 0 else ("BAJO" if sn <= thr else "OK")
+            out2.write(f"{r2['grupo']:15} | Ahora: {sn:3} | Fin día: {se:3} | {estado}\n")
+        st.download_button("📄 Descargar TXT",
+            data=out2.getvalue(),
+            file_name=f"roig_stock_{now.strftime('%Y%m%d_%H%M')}.txt",
+            mime="text/plain", use_container_width=True)
 
 st.markdown("""
-<div style="text-align:center;padding:20px 0 8px;font-size:.72rem;color:#9CA3AF">
-  Roig Fleet Manager · Modo Demo · En producción los datos se cargan desde PDFs con IA
+<div style="text-align:center;padding:18px 0 6px;font-size:.7rem;color:#9CA3AF">
+  Roig Fleet Manager · Modo Demo · Roig Rent a Car
 </div>
 """, unsafe_allow_html=True)
