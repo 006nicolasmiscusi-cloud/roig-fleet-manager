@@ -332,8 +332,10 @@ def auto_assign(reservas, garaje, retornos, sim_now):
         # 4. Return — adjacent category arriving in time
         if not assigned:
             cat_idx = ALL_CATS.index(cat) if cat in ALL_CATS else -1
-            cands = [r for r in ret_pool if not r["used"] and r["avail_dt"] <= res_dt
-                     and ALL_CATS.index(r["cat"]) == cat_idx + 1 if r["cat"] in ALL_CATS else False]
+            cands = [r for r in ret_pool if not r["used"] 
+                     and r["avail_dt"] <= res_dt
+                     and r["cat"] in ALL_CATS
+                     and ALL_CATS.index(r["cat"]) == cat_idx + 1]
             cands.sort(key=lambda x: x["avail_dt"])
             if cands:
                 r2 = cands[0]; r2["used"] = True
