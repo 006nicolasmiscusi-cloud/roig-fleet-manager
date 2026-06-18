@@ -1060,11 +1060,13 @@ with tab_tl:
             p1=p(r["hora"]); p2=p(r["avail_str"])
             w=max(1.2,p2-p1)
             mat=r.get("matricula","")[-7:] if r.get("matricula") else r["hora"]
-            blocks+=f'<div class="tl-block tl-ret" style="left:{p1}%;width:{w}%" title="{r["modelo"]} · ret {r[\"hora\"]} → disp {r[\"avail_str\"]}">{mat}</div>'
+            titulo_ret = f"{r['modelo']} · ret {r['hora']} → disp {r['avail_str']}"
+            blocks+=f'<div class="tl-block tl-ret" style="left:{p1}%;width:{w}%" title="{titulo_ret}">{mat}</div>'
         for s in cat_sals:
             pp=p(s["hora"])
             col="#DC2626" if not s["realizada"] else "#9CA3AF"
-            blocks+=f'<div class="tl-block" style="left:{pp}%;width:2.5%;background:#FEE2E2;color:{col};border-color:#FECACA" title="Salida {s[\"hora\"]} · #{s[\"num\"]}">{s["hora"]}</div>'
+            titulo_sal = f"Salida {s['hora']} · #{s['num']}"
+            blocks+=f'<div class="tl-block" style="left:{pp}%;width:2.5%;background:#FEE2E2;color:{col};border-color:#FECACA" title="{titulo_sal}">{s["hora"]}</div>'
 
         tl_html+=f'''<div class="tl-row">
           <span class="tl-cat"><span class="cat-badge cat-{cat}" style="font-size:.6rem;padding:1px 5px">{cat}</span></span>
